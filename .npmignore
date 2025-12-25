@@ -1,0 +1,30 @@
+# Testing
+**/__tests__/
+**/__fixtures__/
+**/__mocks__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Build artifacts
+android/build/
+android/.gradle/
+android/.idea/
+ios/build/
+
+# Development
+.vscode/
+.idea/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Docs (keep README)
+EXAMPLE.md
+SETUP.md
+
+# CI
+.github/
