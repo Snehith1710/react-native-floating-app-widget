@@ -3,7 +3,9 @@
   "compilerOptions": {
     "outDir": "lib/typescript",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false
   },
   "exclude": ["node_modules", "lib", "example"]
 }

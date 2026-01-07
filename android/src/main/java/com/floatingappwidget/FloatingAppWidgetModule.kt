@@ -6,6 +6,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 /**
  * React Native module for FloatingAppWidget
@@ -19,6 +20,26 @@ class FloatingAppWidgetModule(reactContext: ReactApplicationContext) :
 
     companion object {
         const val NAME = "FloatingAppWidget"
+
+        /**
+         * Send event to React Native JavaScript
+         * Safe to call even if React context is not available (e.g., during hot reload)
+         */
+        fun sendEvent(context: ReactApplicationContext, eventName: String, params: ReadableMap?) {
+            try {
+                // Check if React instance is active before sending events
+                if (!context.hasActiveReactInstance()) {
+                    return
+                }
+
+                context
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    ?.emit(eventName, params)
+            } catch (e: Exception) {
+                // Silently ignore errors during development hot reload
+                // This prevents crashes when React context is being recreated
+            }
+        }
     }
 
     override fun getName(): String {
@@ -181,6 +202,11 @@ class FloatingAppWidgetModule(reactContext: ReactApplicationContext) :
             config.notification.icon?.let { putString("notificationIcon", it) }
             putBoolean("autoStartOnBoot", config.autoStartOnBoot)
             putBoolean("hideOnAppOpen", config.hideOnAppOpen)
+            putBoolean("hasClickCallback", config.hasClickCallback)
+            putBoolean("hasDragCallback", config.hasDragCallback)
+            putBoolean("enableDragToDismiss", config.enableDragToDismiss)
+            putInt("dismissZoneHeight", config.dismissZoneHeight)
+            putBoolean("snapToEdge", config.snapToEdge)
         }.apply()
 
         // Save icon if present

@@ -1,5 +1,12 @@
-import { NativeModules, Platform } from 'react-native';
-import type { WidgetConfig, PermissionStatus } from './types';
+import { NativeModules, Platform, NativeEventEmitter } from 'react-native';
+import type {
+  WidgetConfig,
+  PermissionStatus,
+  WidgetClickEvent,
+  WidgetLongPressEvent,
+  WidgetDragEvent,
+  WidgetPositionEvent,
+} from './types';
 
 // Try to get the TurboModule first, fall back to legacy NativeModules
 let NativeFloatingAppWidget: any;
@@ -18,6 +25,16 @@ try {
 class FloatingAppWidget {
   private initialized = false;
   private currentConfig: WidgetConfig | null = null;
+  private eventEmitter: NativeEventEmitter | null = null;
+  private clickListener: any = null;
+  private longPressListener: any = null;
+  private dragListener: any = null;
+  private showListener: any = null;
+  private hideListener: any = null;
+  private dismissListener: any = null;
+  private positionChangeListener: any = null;
+  private appForegroundListener: any = null;
+  private appBackgroundListener: any = null;
 
   /**
    * Initialize the floating widget with configuration
@@ -31,9 +48,161 @@ class FloatingAppWidget {
     this.checkPlatform();
     this.checkNativeModule();
 
-    await NativeFloatingAppWidget.init(config);
+    // Setup event emitter
+    if (!this.eventEmitter) {
+      this.eventEmitter = new NativeEventEmitter(NativeFloatingAppWidget);
+    }
+
+    // Remove existing listeners
+    this.removeEventListeners();
+
+    // Setup click listener if callback provided
+    if (config.onWidgetClick) {
+      this.clickListener = this.eventEmitter.addListener(
+        'onWidgetClick',
+        (event: WidgetClickEvent) => {
+          config.onWidgetClick?.(event);
+        }
+      );
+    }
+
+    // Setup long press listener if callback provided
+    if (config.onWidgetLongPress) {
+      this.longPressListener = this.eventEmitter.addListener(
+        'onWidgetLongPress',
+        (event: WidgetLongPressEvent) => {
+          config.onWidgetLongPress?.(event);
+        }
+      );
+    }
+
+    // Setup drag listener if callback provided
+    if (config.onWidgetDrag) {
+      this.dragListener = this.eventEmitter.addListener(
+        'onWidgetDrag',
+        (event: WidgetDragEvent) => {
+          config.onWidgetDrag?.(event);
+        }
+      );
+    }
+
+    // Setup show listener if callback provided
+    if (config.onWidgetShow) {
+      this.showListener = this.eventEmitter.addListener(
+        'onWidgetShow',
+        () => {
+          config.onWidgetShow?.();
+        }
+      );
+    }
+
+    // Setup hide listener if callback provided
+    if (config.onWidgetHide) {
+      this.hideListener = this.eventEmitter.addListener(
+        'onWidgetHide',
+        () => {
+          config.onWidgetHide?.();
+        }
+      );
+    }
+
+    // Setup dismiss listener if callback provided
+    if (config.onWidgetDismiss) {
+      this.dismissListener = this.eventEmitter.addListener(
+        'onWidgetDismiss',
+        () => {
+          config.onWidgetDismiss?.();
+        }
+      );
+    }
+
+    // Setup position change listener if callback provided
+    if (config.onWidgetPositionChange) {
+      this.positionChangeListener = this.eventEmitter.addListener(
+        'onWidgetPositionChange',
+        (event: WidgetPositionEvent) => {
+          config.onWidgetPositionChange?.(event);
+        }
+      );
+    }
+
+    // Setup app state listeners if provided
+    if (config.appStateMonitoring?.onAppForeground) {
+      this.appForegroundListener = this.eventEmitter.addListener(
+        'onAppForeground',
+        () => {
+          config.appStateMonitoring?.onAppForeground?.();
+        }
+      );
+    }
+
+    if (config.appStateMonitoring?.onAppBackground) {
+      this.appBackgroundListener = this.eventEmitter.addListener(
+        'onAppBackground',
+        () => {
+          config.appStateMonitoring?.onAppBackground?.();
+        }
+      );
+    }
+
+    // Prepare config for native side, adding callback flags
+    const nativeConfig = {
+      ...config,
+      hasClickCallback: !!config.onWidgetClick,
+      hasLongPressCallback: !!config.onWidgetLongPress,
+      hasDragCallback: !!config.onWidgetDrag,
+      hasShowCallback: !!config.onWidgetShow,
+      hasHideCallback: !!config.onWidgetHide,
+      hasDismissCallback: !!config.onWidgetDismiss,
+      hasPositionChangeCallback: !!config.onWidgetPositionChange,
+      hasAppStateCallbacks: !!(config.appStateMonitoring?.onAppForeground || config.appStateMonitoring?.onAppBackground),
+    };
+
+    await NativeFloatingAppWidget.init(nativeConfig);
     this.currentConfig = config;
     this.initialized = true;
+  }
+
+  /**
+   * Remove all event listeners
+   */
+  private removeEventListeners(): void {
+    if (this.clickListener) {
+      this.clickListener.remove();
+      this.clickListener = null;
+    }
+    if (this.longPressListener) {
+      this.longPressListener.remove();
+      this.longPressListener = null;
+    }
+    if (this.dragListener) {
+      this.dragListener.remove();
+      this.dragListener = null;
+    }
+    if (this.showListener) {
+      this.showListener.remove();
+      this.showListener = null;
+    }
+    if (this.hideListener) {
+      this.hideListener.remove();
+      this.hideListener = null;
+    }
+    if (this.dismissListener) {
+      this.dismissListener.remove();
+      this.dismissListener = null;
+    }
+    if (this.positionChangeListener) {
+      this.positionChangeListener.remove();
+      this.positionChangeListener = null;
+    }
+    if (this.appForegroundListener) {
+      this.appForegroundListener.remove();
+      this.appForegroundListener = null;
+    }
+    if (this.appBackgroundListener) {
+      this.appBackgroundListener.remove();
+      this.appBackgroundListener = null;
+    }
   }
 
   /**
@@ -67,6 +236,9 @@ class FloatingAppWidget {
   async stop(): Promise<void> {
     this.checkPlatform();
     this.checkNativeModule();
+
+    // Remove event listeners
+    this.removeEventListeners();
 
     await NativeFloatingAppWidget.stop();
   }

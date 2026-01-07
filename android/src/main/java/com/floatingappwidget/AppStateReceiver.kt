@@ -39,20 +39,20 @@ class AppStateReceiver(
         }
 
         /**
-         * Start monitoring app state
+         * Start monitoring app state with custom interval
          */
-        fun updateAppState(context: Context, callback: (Boolean) -> Unit) {
+        fun updateAppState(context: Context, callback: (Boolean) -> Unit, checkInterval: Long = 1000) {
             // Cancel any existing checks
             checkRunnable?.let { handler.removeCallbacks(it) }
 
             // Check immediately
             callback(isAppInForeground(context))
 
-            // Start periodic checks
+            // Start periodic checks with custom interval
             checkRunnable = object : Runnable {
                 override fun run() {
                     callback(isAppInForeground(context))
-                    handler.postDelayed(this, 1000) // Check every second
+                    handler.postDelayed(this, checkInterval)
                 }
             }
             handler.post(checkRunnable!!)

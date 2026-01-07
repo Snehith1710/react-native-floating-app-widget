@@ -1,6 +1,6 @@
 {
   "name": "react-native-floating-app-widget",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "description": "Android-only React Native library for system-level floating widgets (chat-head style)",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
