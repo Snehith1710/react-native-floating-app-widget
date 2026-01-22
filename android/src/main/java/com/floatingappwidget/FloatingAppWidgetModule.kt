@@ -1,6 +1,7 @@
 package com.floatingappwidget
 
 import android.content.Context
+import android.content.Intent
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -127,6 +128,93 @@ class FloatingAppWidgetModule(reactContext: ReactApplicationContext) :
     }
 
     /**
+     * Trigger pulse animation
+     */
+    @ReactMethod
+    fun pulse(config: ReadableMap, promise: Promise) {
+        try {
+            val context = reactApplicationContext
+
+            if (!isServiceRunning) {
+                promise.reject(
+                    "SERVICE_NOT_RUNNING",
+                    "Widget service is not running. Call start() first."
+                )
+                return
+            }
+
+            // Send pulse command to service
+            val intent = Intent(context, FloatingWidgetService::class.java)
+            intent.action = "com.floatingappwidget.PULSE"
+            intent.putExtra("count", if (config.hasKey("count")) config.getInt("count") else 3)
+            intent.putExtra("duration", if (config.hasKey("duration")) config.getInt("duration") else 500)
+            intent.putExtra("scale", if (config.hasKey("scale")) config.getDouble("scale").toFloat() else 1.2f)
+            intent.putExtra("alpha", if (config.hasKey("alpha")) config.getDouble("alpha").toFloat() else 0.7f)
+            context.startService(intent)
+
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("PULSE_ERROR", "Failed to trigger pulse: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Update widget appearance
+     */
+    @ReactMethod
+    fun updateAppearance(appearance: ReadableMap, promise: Promise) {
+        try {
+            val context = reactApplicationContext
+
+            if (!isServiceRunning) {
+                promise.reject(
+                    "SERVICE_NOT_RUNNING",
+                    "Widget service is not running. Call start() first."
+                )
+                return
+            }
+
+            // Send update appearance command to service
+            val intent = Intent(context, FloatingWidgetService::class.java)
+            intent.action = "com.floatingappwidget.UPDATE_APPEARANCE"
+            intent.putExtra("appearance", appearance.toHashMap() as HashMap<*, *>)
+            context.startService(intent)
+
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("UPDATE_APPEARANCE_ERROR", "Failed to update appearance: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Update widget badge
+     */
+    @ReactMethod
+    fun updateBadge(badge: ReadableMap, promise: Promise) {
+        try {
+            val context = reactApplicationContext
+
+            if (!isServiceRunning) {
+                promise.reject(
+                    "SERVICE_NOT_RUNNING",
+                    "Widget service is not running. Call start() first."
+                )
+                return
+            }
+
+            // Send update badge command to service
+            val intent = Intent(context, FloatingWidgetService::class.java)
+            intent.action = "com.floatingappwidget.UPDATE_BADGE"
+            intent.putExtra("badge", badge.toHashMap() as HashMap<*, *>)
+            context.startService(intent)
+
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("UPDATE_BADGE_ERROR", "Failed to update badge: ${e.message}", e)
+        }
+    }
+
+    /**
      * Update widget configuration
      */
     @ReactMethod
@@ -214,5 +302,114 @@ class FloatingAppWidgetModule(reactContext: ReactApplicationContext) :
             // In a production app, you might want to save the bitmap to file storage
             // For simplicity, we're not persisting the bitmap here
         }
+    }
+
+    /**
+     * Open device-specific autostart/background settings
+     * Helps users whitelist the app on MIUI, EMUI, ColorOS, etc.
+     */
+    @ReactMethod
+    fun openAutostartSettings(promise: Promise) {
+        try {
+            val context = reactApplicationContext
+            val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+
+            val intent = when {
+                // Xiaomi MIUI
+                manufacturer.contains("xiaomi") -> {
+                    Intent().apply {
+                        setClassName(
+                            "com.miui.securitycenter",
+                            "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                        )
+                    }
+                }
+                // Huawei EMUI
+                manufacturer.contains("huawei") -> {
+                    Intent().apply {
+                        setClassName(
+                            "com.huawei.systemmanager",
+                            "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+                        )
+                    }
+                }
+                // Oppo ColorOS
+                manufacturer.contains("oppo") -> {
+                    Intent().apply {
+                        setClassName(
+                            "com.coloros.safecenter",
+                            "com.coloros.safecenter.permission.startup.StartupAppListActivity"
+                        )
+                    }
+                }
+                // Vivo FuntouchOS
+                manufacturer.contains("vivo") -> {
+                    Intent().apply {
+                        setClassName(
+                            "com.vivo.permissionmanager",
+                            "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+                        )
+                    }
+                }
+                // OnePlus OxygenOS
+                manufacturer.contains("oneplus") -> {
+                    Intent().apply {
+                        setClassName(
+                            "com.oneplus.security",
+                            "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"
+                        )
+                    }
+                }
+                // Samsung (battery optimization)
+                manufacturer.contains("samsung") -> {
+                    Intent().apply {
+                        action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                }
+                // Generic fallback
+                else -> {
+                    Intent().apply {
+                        action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                    }
+                }
+            }
+
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            promise.resolve(manufacturer)
+        } catch (e: Exception) {
+            // Fallback to app settings if specific intent fails
+            try {
+                val intent = Intent().apply {
+                    action = android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                    data = android.net.Uri.fromParts("package", reactApplicationContext.packageName, null)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                reactApplicationContext.startActivity(intent)
+                promise.resolve("fallback")
+            } catch (e2: Exception) {
+                promise.reject("SETTINGS_ERROR", "Failed to open settings: ${e2.message}", e2)
+            }
+        }
+    }
+
+    /**
+     * Check if the device manufacturer is known for aggressive battery optimization
+     */
+    @ReactMethod
+    fun isAggressiveDevice(promise: Promise) {
+        val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+        val isAggressive = manufacturer.contains("xiaomi") ||
+                          manufacturer.contains("huawei") ||
+                          manufacturer.contains("oppo") ||
+                          manufacturer.contains("vivo") ||
+                          manufacturer.contains("oneplus")
+
+        promise.resolve(mapOf(
+            "isAggressive" to isAggressive,
+            "manufacturer" to manufacturer
+        ))
     }
 }

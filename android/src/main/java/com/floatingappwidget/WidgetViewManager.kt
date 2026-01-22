@@ -48,8 +48,10 @@ class WidgetViewManager(private val context: Context) {
     private var widgetView: ImageView? = null
     private var badgeView: TextView? = null
     private var dismissZoneView: TextView? = null
+    private var dismissZoneRadiusView: View? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var dismissZoneParams: WindowManager.LayoutParams? = null
+    private var dismissZoneRadiusParams: WindowManager.LayoutParams? = null
     private var config: WidgetConfig? = null
 
     // For drag functionality
@@ -95,6 +97,11 @@ class WidgetViewManager(private val context: Context) {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
+
+            // Set elevation for shadow/glow effect
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && widgetConfig.appearance.elevation > 0) {
+                elevation = dpToPx(widgetConfig.appearance.elevation).toFloat()
+            }
         }
 
         // Create widget view
@@ -202,19 +209,17 @@ class WidgetViewManager(private val context: Context) {
                 sendLifecycleEvent(context, "onWidgetHide")
             }
 
-            // Clean up bitmaps to prevent memory leaks
-            widgetView?.let { imageView ->
-                val drawable = imageView.drawable
-                if (drawable is BitmapDrawable) {
-                    drawable.bitmap?.recycle()
-                }
-                imageView.setImageDrawable(null)
-            }
+            // Clear the drawable reference (but don't recycle the bitmap,
+            // as it belongs to the config and may be reused)
+            widgetView?.setImageDrawable(null)
 
             widgetContainer?.let { view ->
                 windowManager?.removeView(view)
             }
             dismissZoneView?.let { view ->
+                windowManager?.removeView(view)
+            }
+            dismissZoneRadiusView?.let { view ->
                 windowManager?.removeView(view)
             }
         } catch (e: Exception) {
@@ -224,8 +229,10 @@ class WidgetViewManager(private val context: Context) {
             widgetContainer = null
             badgeView = null
             dismissZoneView = null
+            dismissZoneRadiusView = null
             layoutParams = null
             dismissZoneParams = null
+            dismissZoneRadiusParams = null
         }
     }
 
@@ -235,6 +242,140 @@ class WidgetViewManager(private val context: Context) {
     fun updateWidget(newConfig: WidgetConfig) {
         hideWidget()
         showWidget(newConfig)
+    }
+
+    /**
+     * Trigger pulse animation
+     */
+    fun pulse(count: Int, duration: Long, scale: Float, alpha: Float) {
+        widgetView?.let { view ->
+            var currentCycle = 0
+
+            val pulseRunnable = object : Runnable {
+                override fun run() {
+                    if (currentCycle >= count * 2) {
+                        // Reset to original state
+                        view.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .alpha(config?.appearance?.opacity ?: 1.0f)
+                            .setDuration(duration / 2)
+                            .start()
+                        return
+                    }
+
+                    if (currentCycle % 2 == 0) {
+                        // Scale up and fade
+                        view.animate()
+                            .scaleX(scale)
+                            .scaleY(scale)
+                            .alpha(alpha)
+                            .setDuration(duration / 2)
+                            .withEndAction {
+                                currentCycle++
+                                Handler(Looper.getMainLooper()).postDelayed(this, 0)
+                            }
+                            .start()
+                    } else {
+                        // Scale down and restore
+                        view.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .alpha(config?.appearance?.opacity ?: 1.0f)
+                            .setDuration(duration / 2)
+                            .withEndAction {
+                                currentCycle++
+                                Handler(Looper.getMainLooper()).postDelayed(this, 50)
+                            }
+                            .start()
+                    }
+                }
+            }
+
+            pulseRunnable.run()
+        }
+    }
+
+    /**
+     * Update widget appearance without full reconfiguration
+     */
+    fun updateAppearance(appearance: HashMap<String, Any>) {
+        widgetView?.let { view ->
+            // Update opacity
+            if (appearance.containsKey("opacity")) {
+                val opacity = (appearance["opacity"] as? Number)?.toFloat() ?: 1.0f
+                view.alpha = opacity
+                config?.appearance?.let {
+                    config = config?.copy(appearance = it.copy(opacity = opacity))
+                }
+            }
+
+            // Update background
+            if (appearance.containsKey("backgroundColor") || appearance.containsKey("borderColor")) {
+                val currentConfig = config
+                if (currentConfig != null) {
+                    val newAppearance = currentConfig.appearance.copy(
+                        backgroundColor = (appearance["backgroundColor"] as? String)?.let { parseColor(it) }
+                            ?: currentConfig.appearance.backgroundColor,
+                        borderColor = (appearance["borderColor"] as? String)?.let { parseColor(it) }
+                            ?: currentConfig.appearance.borderColor
+                    )
+                    view.background = createBackgroundDrawable(currentConfig.copy(appearance = newAppearance))
+                    config = currentConfig.copy(appearance = newAppearance)
+                }
+            }
+
+            // Update elevation
+            if (appearance.containsKey("elevation")) {
+                val elevation = (appearance["elevation"] as? Number)?.toFloat() ?: 0f
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    widgetContainer?.elevation = dpToPx(elevation.toInt()).toFloat()
+                }
+            }
+        }
+    }
+
+    /**
+     * Update badge without full reconfiguration
+     */
+    fun updateBadge(badgeData: HashMap<String, Any>) {
+        // Remove existing badge
+        badgeView?.let { view ->
+            widgetContainer?.removeView(view)
+            badgeView = null
+        }
+
+        // Create new badge if data provided
+        val config = this.config ?: return
+        val badge = config.badge ?: return
+
+        val newBadge = badge.copy(
+            count = if (badgeData.containsKey("count")) {
+                (badgeData["count"] as? Number)?.toInt()
+            } else badge.count,
+            text = if (badgeData.containsKey("text")) {
+                badgeData["text"] as? String
+            } else badge.text
+        )
+
+        createBadgeView(newBadge, dpToPx(config.size))?.let { newBadgeView ->
+            badgeView = newBadgeView
+            widgetContainer?.addView(newBadgeView)
+        }
+
+        // Update config
+        this.config = config.copy(badge = newBadge)
+    }
+
+    /**
+     * Parse color string to int
+     */
+    private fun parseColor(color: String): Int {
+        return try {
+            Color.parseColor(color)
+        } catch (e: Exception) {
+            Color.WHITE
+        }
     }
 
     /**
@@ -275,7 +416,6 @@ class WidgetViewManager(private val context: Context) {
 
                 // Animate press effect
                 animatePress(true)
-                performHapticFeedback()
 
                 // Start long press detection
                 if (config.hasLongPressCallback) {
@@ -327,13 +467,13 @@ class WidgetViewManager(private val context: Context) {
                     val rawY = initialY + deltaY.toInt()
                     val (newX, newY) = applyConstraints(rawX, rawY)
 
-                    layoutParams?.apply {
-                        x = newX
-                        y = newY
+                    // Update layout params and view
+                    val params = layoutParams
+                    if (params != null) {
+                        params.x = newX
+                        params.y = newY
+                        windowManager?.updateViewLayout(widgetContainer, params)
                     }
-
-                    // Update view
-                    windowManager?.updateViewLayout(widgetContainer, layoutParams)
 
                     // Update dismiss zone if drag-to-dismiss is enabled
                     if (config.dismissZone.enabled || config.enableDragToDismiss) {
@@ -370,7 +510,19 @@ class WidgetViewManager(private val context: Context) {
                         if (config.hasDismissCallback && context is ReactApplicationContext) {
                             sendLifecycleEvent(context, "onWidgetDismiss")
                         }
-                        hideWidget()
+
+                        // Handle dismiss based on dismissBehavior
+                        when (config.dismissZone.dismissBehavior) {
+                            DismissZoneConfig.DismissBehavior.HIDE -> {
+                                // Hide widget, keep service running
+                                hideWidget()
+                            }
+                            DismissZoneConfig.DismissBehavior.DESTROY -> {
+                                // Stop service completely
+                                hideWidget()
+                                FloatingWidgetService.stop(context)
+                            }
+                        }
                         return true
                     }
                 }
@@ -528,26 +680,59 @@ class WidgetViewManager(private val context: Context) {
      * Check if widget is in dismiss zone
      */
     private fun isInDismissZone(y: Int): Boolean {
+        val x = layoutParams?.x ?: 0
+        return isInDismissZone(x, y)
+    }
+
+    private fun isInDismissZone(x: Int, y: Int): Boolean {
         val config = this.config ?: return false
         if (!config.dismissZone.enabled && !config.enableDragToDismiss) return false
 
         val displayMetrics = context.resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels
         val screenHeight = displayMetrics.heightPixels
+        val dismissConfig = config.dismissZone
 
-        // Use new config if available, fallback to legacy
-        val dismissZoneHeight = if (config.dismissZone.enabled) {
-            dpToPx(config.dismissZone.height)
-        } else {
-            dpToPx(config.dismissZoneHeight)
-        }
+        if (dismissConfig.style == DismissZoneConfig.Style.CIRCULAR) {
+            // Circular dismiss button detection
+            val dismissButtonSize = dpToPx(dismissConfig.buttonSize)
+            val dismissButtonRadius = dismissButtonSize / 2
+            val dismissActivationRadius = dpToPx(dismissConfig.activationRadius)
 
-        // Check position based on dismiss zone placement
-        return if (config.dismissZone.position == DismissZoneConfig.Position.TOP) {
-            y <= dismissZoneHeight
+            // Button position based on config
+            val buttonCenterX = screenWidth / 2
+            val buttonCenterY = if (dismissConfig.position == DismissZoneConfig.Position.TOP) {
+                dpToPx(dismissConfig.margin) + dismissButtonRadius
+            } else {
+                screenHeight - dpToPx(dismissConfig.margin) - dismissButtonRadius
+            }
+
+            // Widget center position
+            val widgetSize = dpToPx(config.size)
+            val widgetCenterX = x + widgetSize / 2
+            val widgetCenterY = y + widgetSize / 2
+
+            // Calculate distance from widget center to button center
+            val dx = widgetCenterX - buttonCenterX
+            val dy = widgetCenterY - buttonCenterY
+            val distance = kotlin.math.sqrt((dx * dx + dy * dy).toDouble())
+
+            // Widget is in dismiss zone if distance is less than activation radius
+            return distance <= dismissActivationRadius
         } else {
-            // BOTTOM (default)
-            val dismissZoneTop = screenHeight - dismissZoneHeight
-            y >= dismissZoneTop
+            // Bar style (legacy) - horizontal zone detection
+            val dismissZoneHeight = if (config.dismissZone.enabled) {
+                dpToPx(config.dismissZone.height)
+            } else {
+                dpToPx(config.dismissZoneHeight)
+            }
+
+            return if (dismissConfig.position == DismissZoneConfig.Position.TOP) {
+                y <= dismissZoneHeight
+            } else {
+                val dismissZoneTop = screenHeight - dismissZoneHeight
+                y >= dismissZoneTop
+            }
         }
     }
 
@@ -577,35 +762,9 @@ class WidgetViewManager(private val context: Context) {
             dpToPx(config.dismissZoneHeight)
         }
 
-        val dismissZoneText = if (config.dismissZone.enabled) {
-            config.dismissZone.text
-        } else {
-            "⊗ Release to remove"
-        }
-
-        val dismissZoneTextColor = if (config.dismissZone.enabled) {
-            config.dismissZone.textColor
-        } else {
-            Color.WHITE
-        }
-
-        val dismissZoneTextSize = if (config.dismissZone.enabled) {
-            config.dismissZone.textSize.toFloat()
-        } else {
-            16f
-        }
-
-        // Create dismiss zone view with gradient or solid color background
-        dismissZoneView = TextView(context).apply {
-            text = dismissZoneText
-            setTextColor(dismissZoneTextColor)
-            gravity = Gravity.CENTER
-            textSize = dismissZoneTextSize
-            alpha = 0.5f
-
-            // Set background with gradient or solid color
-            background = createDismissZoneBackground(config, false)
-        }
+        // Check dismiss zone style
+        val dismissConfig = config.dismissZone
+        val isCircular = dismissConfig.style == DismissZoneConfig.Style.CIRCULAR
 
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -614,26 +773,116 @@ class WidgetViewManager(private val context: Context) {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        dismissZoneParams = WindowManager.LayoutParams(
-            screenWidth,
-            dismissZoneHeight,
-            overlayType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            // Position based on config
-            gravity = if (config.dismissZone.position == DismissZoneConfig.Position.TOP) {
-                Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            } else {
-                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        if (isCircular) {
+            // Circular button style
+            val dismissButtonSize = dpToPx(dismissConfig.buttonSize)
+            val activationRadiusSize = dpToPx(dismissConfig.activationRadius) * 2
+
+            // Create activation radius background circle
+            dismissZoneRadiusView = View(context).apply {
+                // Circular background for activation radius
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(dismissConfig.radiusBackgroundColor)
+                }
+            }
+
+            dismissZoneRadiusParams = WindowManager.LayoutParams(
+                activationRadiusSize,
+                activationRadiusSize,
+                overlayType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                // Position based on config
+                gravity = if (dismissConfig.position == DismissZoneConfig.Position.TOP) {
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                } else {
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                }
+                // Offset to center the radius background
+                y = dpToPx(dismissConfig.margin) - dpToPx(dismissConfig.activationRadius) + dpToPx(dismissConfig.buttonSize) / 2
+            }
+
+            // Create the dismiss button on top of the radius background
+            dismissZoneView = TextView(context).apply {
+                text = dismissConfig.icon
+                setTextColor(dismissConfig.textColor)
+                gravity = Gravity.CENTER
+                textSize = dismissConfig.iconSize.toFloat()
+                alpha = dismissConfig.inactiveOpacity
+
+                // Circular background
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(dismissConfig.backgroundColor)
+                }
+
+                // Set elevation for shadow effect
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    elevation = dpToPx(dismissConfig.elevation).toFloat()
+                }
+
+                // Set size
+                layoutParams = FrameLayout.LayoutParams(dismissButtonSize, dismissButtonSize)
+            }
+
+            dismissZoneParams = WindowManager.LayoutParams(
+                dismissButtonSize,
+                dismissButtonSize,
+                overlayType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                // Position based on config
+                gravity = if (dismissConfig.position == DismissZoneConfig.Position.TOP) {
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                } else {
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                }
+                // Add margin from edge
+                y = dpToPx(dismissConfig.margin)
+            }
+        } else {
+            // Bar style (legacy)
+            dismissZoneView = TextView(context).apply {
+                text = dismissConfig.text
+                setTextColor(dismissConfig.textColor)
+                gravity = Gravity.CENTER
+                textSize = dismissConfig.textSize.toFloat()
+                alpha = 0.5f
+
+                // Set background with gradient or solid color
+                background = createDismissZoneBackground(config, false)
+            }
+
+            dismissZoneParams = WindowManager.LayoutParams(
+                screenWidth,
+                dismissZoneHeight,
+                overlayType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                // Position based on config
+                gravity = if (dismissConfig.position == DismissZoneConfig.Position.TOP) {
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                } else {
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                }
             }
         }
 
         try {
+            // Add radius background first (so it appears behind the button)
+            if (dismissZoneRadiusView != null && dismissZoneRadiusParams != null) {
+                windowManager?.addView(dismissZoneRadiusView, dismissZoneRadiusParams)
+            }
+            // Then add the button on top
             windowManager?.addView(dismissZoneView, dismissZoneParams)
         } catch (e: Exception) {
             // Handle exception
             dismissZoneView = null
+            dismissZoneRadiusView = null
         }
     }
 
@@ -645,11 +894,16 @@ class WidgetViewManager(private val context: Context) {
             dismissZoneView?.let { view ->
                 windowManager?.removeView(view)
             }
+            dismissZoneRadiusView?.let { view ->
+                windowManager?.removeView(view)
+            }
         } catch (e: Exception) {
             // View might already be removed
         } finally {
             dismissZoneView = null
+            dismissZoneRadiusView = null
             dismissZoneParams = null
+            dismissZoneRadiusParams = null
         }
     }
 
@@ -658,10 +912,54 @@ class WidgetViewManager(private val context: Context) {
      */
     private fun updateDismissZoneAppearance(isInZone: Boolean) {
         val config = this.config ?: return
+        val dismissConfig = config.dismissZone
 
+        // Update the activation radius background
+        dismissZoneRadiusView?.apply {
+            if (dismissConfig.style == DismissZoneConfig.Style.CIRCULAR) {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(if (isInZone) dismissConfig.activeRadiusBackgroundColor else dismissConfig.radiusBackgroundColor)
+                }
+            }
+        }
+
+        // Update the button
         dismissZoneView?.apply {
-            alpha = if (isInZone) 1.0f else 0.5f
-            background = createDismissZoneBackground(config, isInZone)
+            if (dismissConfig.style == DismissZoneConfig.Style.CIRCULAR) {
+                // Circular button style
+                if (isInZone) {
+                    // Active state
+                    alpha = dismissConfig.activeOpacity
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(dismissConfig.activeBackgroundColor)
+                        // Add border if configured
+                        if (dismissConfig.activeBorderWidth > 0) {
+                            setStroke(dpToPx(dismissConfig.activeBorderWidth), dismissConfig.activeBorderColor)
+                        }
+                    }
+                    // Increase elevation
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        elevation = dpToPx(dismissConfig.activeElevation).toFloat()
+                    }
+                } else {
+                    // Inactive state
+                    alpha = dismissConfig.inactiveOpacity
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(dismissConfig.backgroundColor)
+                    }
+                    // Normal elevation
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        elevation = dpToPx(dismissConfig.elevation).toFloat()
+                    }
+                }
+            } else {
+                // Bar style (legacy)
+                alpha = if (isInZone) 1.0f else 0.5f
+                background = createDismissZoneBackground(config, isInZone)
+            }
         }
     }
 

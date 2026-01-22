@@ -15,7 +15,9 @@ data class WidgetAppearanceConfig(
     val borderWidth: Int = 2, // dp
     val padding: Int = 8, // dp
     val opacity: Float = 1.0f,
-    val cornerRadius: Int = 12 // dp
+    val cornerRadius: Int = 12, // dp
+    val elevation: Int = 0, // dp
+    val shadowColor: Int = Color.BLACK
 ) {
     companion object {
         fun fromReadableMap(map: ReadableMap?): WidgetAppearanceConfig {
@@ -27,7 +29,9 @@ data class WidgetAppearanceConfig(
                 borderWidth = if (map.hasKey("borderWidth")) map.getInt("borderWidth") else 2,
                 padding = if (map.hasKey("padding")) map.getInt("padding") else 8,
                 opacity = if (map.hasKey("opacity")) map.getDouble("opacity").toFloat() else 1.0f,
-                cornerRadius = if (map.hasKey("cornerRadius")) map.getInt("cornerRadius") else 12
+                cornerRadius = if (map.hasKey("cornerRadius")) map.getInt("cornerRadius") else 12,
+                elevation = if (map.hasKey("elevation")) map.getInt("elevation") else 0,
+                shadowColor = parseColor(map.getString("shadowColor"), Color.BLACK)
             )
         }
 
@@ -58,7 +62,25 @@ data class DismissZoneConfig(
     val text: String = "⊗ Release to remove",
     val textColor: Int = Color.WHITE,
     val textSize: Int = 16, // sp
-    val position: Position = Position.BOTTOM
+    val position: Position = Position.BOTTOM,
+    // New circular button properties
+    val style: Style = Style.CIRCULAR,
+    val buttonSize: Int = 60, // dp
+    val activationRadius: Int = 100, // dp
+    val icon: String = "✕",
+    val iconSize: Int = 24, // sp
+    val elevation: Int = 4, // dp
+    val activeElevation: Int = 8, // dp
+    val inactiveOpacity: Float = 0.6f,
+    val activeOpacity: Float = 1.0f,
+    val activeBorderColor: Int = Color.argb(77, 0, 0, 0), // 30% black
+    val activeBorderWidth: Int = 2, // dp
+    val margin: Int = 40, // dp
+    // Activation radius background colors
+    val radiusBackgroundColor: Int = Color.argb(26, 255, 255, 255), // 10% white for inactive
+    val activeRadiusBackgroundColor: Int = Color.argb(51, 0, 0, 0), // 20% black for active
+    // Dismiss behavior
+    val dismissBehavior: DismissBehavior = DismissBehavior.HIDE
 ) {
     enum class Position {
         TOP, BOTTOM
@@ -69,11 +91,21 @@ data class DismissZoneConfig(
         LONG_PRESS   // Only show after long press
     }
 
+    enum class DismissBehavior {
+        HIDE,        // Hide widget, keep service running (widget reappears on next trigger)
+        DESTROY      // Stop service completely (requires init() to restart)
+    }
+
     enum class GradientOrientation {
         HORIZONTAL,      // Left to right
         VERTICAL,        // Top to bottom
         DIAGONAL_TL_BR,  // Top-left to bottom-right
         DIAGONAL_BL_TR   // Bottom-left to top-right
+    }
+
+    enum class Style {
+        BAR,       // Full-width horizontal bar (legacy)
+        CIRCULAR   // Circular button with icon (modern)
     }
 
     companion object {
@@ -123,6 +155,28 @@ data class DismissZoneConfig(
                 position = when (map.getString("position")) {
                     "top" -> Position.TOP
                     else -> Position.BOTTOM
+                },
+                // New circular button properties
+                style = when (map.getString("style")) {
+                    "bar" -> Style.BAR
+                    else -> Style.CIRCULAR
+                },
+                buttonSize = if (map.hasKey("buttonSize")) map.getInt("buttonSize") else 60,
+                activationRadius = if (map.hasKey("activationRadius")) map.getInt("activationRadius") else 100,
+                icon = map.getString("icon") ?: "✕",
+                iconSize = if (map.hasKey("iconSize")) map.getInt("iconSize") else 24,
+                elevation = if (map.hasKey("elevation")) map.getInt("elevation") else 4,
+                activeElevation = if (map.hasKey("activeElevation")) map.getInt("activeElevation") else 8,
+                inactiveOpacity = if (map.hasKey("inactiveOpacity")) map.getDouble("inactiveOpacity").toFloat() else 0.6f,
+                activeOpacity = if (map.hasKey("activeOpacity")) map.getDouble("activeOpacity").toFloat() else 1.0f,
+                activeBorderColor = parseColor(map.getString("activeBorderColor"), Color.argb(77, 0, 0, 0)),
+                activeBorderWidth = if (map.hasKey("activeBorderWidth")) map.getInt("activeBorderWidth") else 2,
+                margin = if (map.hasKey("margin")) map.getInt("margin") else 40,
+                radiusBackgroundColor = parseColor(map.getString("radiusBackgroundColor"), Color.argb(26, 255, 255, 255)),
+                activeRadiusBackgroundColor = parseColor(map.getString("activeRadiusBackgroundColor"), Color.argb(51, 0, 0, 0)),
+                dismissBehavior = when (map.getString("dismissBehavior")) {
+                    "destroy" -> DismissBehavior.DESTROY
+                    else -> DismissBehavior.HIDE
                 }
             )
         }

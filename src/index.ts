@@ -298,6 +298,70 @@ class FloatingAppWidget {
   }
 
   /**
+   * Trigger pulse animation on the widget
+   * Useful for drawing attention (e.g., incoming order notification)
+   *
+   * @param config - Optional pulse configuration, uses default from init() if not provided
+   */
+  async pulse(config?: {
+    count?: number;
+    duration?: number;
+    scale?: number;
+    alpha?: number;
+  }): Promise<void> {
+    this.checkPlatform();
+    this.checkNativeModule();
+
+    if (!this.initialized) {
+      throw new Error('FloatingAppWidget: Must call init() before pulse()');
+    }
+
+    await NativeFloatingAppWidget.pulse(config || {});
+  }
+
+  /**
+   * Update widget appearance without full reconfiguration
+   * Lightweight method for changing visual state (e.g., idle vs active)
+   *
+   * @param appearance - Appearance properties to update
+   */
+  async updateAppearance(appearance: {
+    opacity?: number;
+    backgroundColor?: string;
+    borderColor?: string;
+    elevation?: number;
+  }): Promise<void> {
+    this.checkPlatform();
+    this.checkNativeModule();
+
+    if (!this.initialized) {
+      throw new Error('FloatingAppWidget: Must call init() before updateAppearance()');
+    }
+
+    await NativeFloatingAppWidget.updateAppearance(appearance);
+  }
+
+  /**
+   * Update badge without full reconfiguration
+   * Quick method to update notification count or text
+   *
+   * @param badge - Badge configuration to update
+   */
+  async updateBadge(badge: {
+    count?: number | null;
+    text?: string | null;
+  }): Promise<void> {
+    this.checkPlatform();
+    this.checkNativeModule();
+
+    if (!this.initialized) {
+      throw new Error('FloatingAppWidget: Must call init() before updateBadge()');
+    }
+
+    await NativeFloatingAppWidget.updateBadge(badge);
+  }
+
+  /**
    * Get current widget configuration
    *
    * @returns Current configuration or null if not initialized
@@ -311,6 +375,36 @@ class FloatingAppWidget {
    */
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * Check if the device manufacturer is known for aggressive battery optimization
+   * (Xiaomi, Huawei, Oppo, Vivo, OnePlus)
+   *
+   * @returns Object with isAggressive flag and manufacturer name
+   */
+  async isAggressiveDevice(): Promise<{
+    isAggressive: boolean;
+    manufacturer: string;
+  }> {
+    this.checkPlatform();
+    this.checkNativeModule();
+
+    return await NativeFloatingAppWidget.isAggressiveDevice();
+  }
+
+  /**
+   * Open device-specific autostart/background settings
+   * Helps users whitelist the app on devices with aggressive battery optimization
+   * (Xiaomi MIUI, Huawei EMUI, Oppo ColorOS, Vivo FuntouchOS, etc.)
+   *
+   * @returns The manufacturer name or 'fallback' if using generic settings
+   */
+  async openAutostartSettings(): Promise<string> {
+    this.checkPlatform();
+    this.checkNativeModule();
+
+    return await NativeFloatingAppWidget.openAutostartSettings();
   }
 
   private checkPlatform(): void {

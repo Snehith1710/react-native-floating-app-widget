@@ -141,6 +141,20 @@ export interface WidgetAppearance {
    * Default: 12
    */
   cornerRadius?: number;
+
+  /**
+   * Elevation/shadow depth in dp (Android only)
+   * Creates a shadow/glow effect around the widget
+   * Default: 0 (no shadow)
+   */
+  elevation?: number;
+
+  /**
+   * Shadow color as hex string
+   * Only used when elevation > 0
+   * Default: '#000000' (black)
+   */
+  shadowColor?: string;
 }
 
 /**
@@ -234,6 +248,103 @@ export interface DismissZoneConfig {
    * Default: 'bottom'
    */
   position?: 'top' | 'bottom';
+
+  /**
+   * Dismiss zone style
+   * - 'bar': Full-width horizontal bar (legacy style)
+   * - 'circular': Circular button with icon (modern style)
+   * Default: 'circular'
+   */
+  style?: 'bar' | 'circular';
+
+  /**
+   * Circular button size in dp (only for style='circular')
+   * Default: 60
+   */
+  buttonSize?: number;
+
+  /**
+   * Activation radius in dp (only for style='circular')
+   * Distance from button center where widget is considered in dismiss zone
+   * Default: 100
+   */
+  activationRadius?: number;
+
+  /**
+   * Icon/text for dismiss button (only for style='circular')
+   * Default: '✕'
+   */
+  icon?: string;
+
+  /**
+   * Icon size in sp (only for style='circular')
+   * Default: 24
+   */
+  iconSize?: number;
+
+  /**
+   * Inactive elevation in dp (only for style='circular')
+   * Default: 4
+   */
+  elevation?: number;
+
+  /**
+   * Active elevation in dp when widget is near (only for style='circular')
+   * Default: 8
+   */
+  activeElevation?: number;
+
+  /**
+   * Inactive opacity (0.0 - 1.0) (only for style='circular')
+   * Default: 0.6
+   */
+  inactiveOpacity?: number;
+
+  /**
+   * Active opacity (0.0 - 1.0) (only for style='circular')
+   * Default: 1.0
+   */
+  activeOpacity?: number;
+
+  /**
+   * Border color for active state (only for style='circular')
+   * Default: '#4D000000' (30% black)
+   */
+  activeBorderColor?: string;
+
+  /**
+   * Border width in dp for active state (only for style='circular')
+   * Default: 2
+   */
+  activeBorderWidth?: number;
+
+  /**
+   * Margin from bottom/top edge in dp (only for style='circular')
+   * Default: 40
+   */
+  margin?: number;
+
+  /**
+   * Background color for activation radius area (only for style='circular')
+   * Shows a circular background behind the button indicating the activation zone
+   * Default: '#1AFFFFFF' (10% white)
+   */
+  radiusBackgroundColor?: string;
+
+  /**
+   * Active background color for activation radius area (only for style='circular')
+   * Background color when widget is near the dismiss zone
+   * Default: '#33000000' (20% black)
+   */
+  activeRadiusBackgroundColor?: string;
+
+  /**
+   * Behavior when widget is dragged to dismiss zone
+   * - 'hide': Hide widget but keep service running (widget reappears on next trigger like app background)
+   * - 'destroy': Stop service completely (requires calling init() again to restart)
+   * Default: 'hide'
+   */
+  dismissBehavior?: 'hide' | 'destroy';
 }
 
 /**
@@ -269,6 +380,35 @@ export interface AnimationConfig {
    * Default: false
    */
   enableHapticFeedback?: boolean;
+
+  /**
+   * Pulse animation configuration for attention-grabbing
+   */
+  pulse?: {
+    /**
+     * Number of pulse cycles
+     * Default: 3
+     */
+    count?: number;
+
+    /**
+     * Duration of one pulse cycle in ms
+     * Default: 500
+     */
+    duration?: number;
+
+    /**
+     * Scale factor during pulse (1.0 = no scale, 1.2 = 20% larger)
+     * Default: 1.2
+     */
+    scale?: number;
+
+    /**
+     * Alpha/opacity during pulse (0.0-1.0)
+     * Default: 0.7
+     */
+    alpha?: number;
+  };
 }
 
 /**

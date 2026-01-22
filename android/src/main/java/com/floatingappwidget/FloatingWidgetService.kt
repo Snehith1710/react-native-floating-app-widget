@@ -30,6 +30,9 @@ class FloatingWidgetService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_STOP_SERVICE = "com.floatingappwidget.STOP_SERVICE"
+        private const val ACTION_PULSE = "com.floatingappwidget.PULSE"
+        private const val ACTION_UPDATE_APPEARANCE = "com.floatingappwidget.UPDATE_APPEARANCE"
+        private const val ACTION_UPDATE_BADGE = "com.floatingappwidget.UPDATE_BADGE"
 
         /**
          * Start the service
@@ -84,6 +87,19 @@ class FloatingWidgetService : Service() {
         } else {
             registerReceiver(appStateReceiver, filter)
         }
+
+        // Check if service was previously running (for restart scenarios)
+        val prefs = getSharedPreferences("FloatingWidget", Context.MODE_PRIVATE)
+        val wasRunning = prefs.getBoolean("serviceEnabled", false)
+
+        if (wasRunning) {
+            // Service was running before - restore it
+            // Load config from SharedPreferences
+            val savedConfig = Intent().getParcelableExtra(applicationContext, "config")
+            if (savedConfig != null) {
+                currentConfig = savedConfig
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -93,8 +109,45 @@ class FloatingWidgetService : Service() {
             return START_NOT_STICKY
         }
 
-        // Get config from intent or use existing
-        val config = intent?.getParcelableExtra(applicationContext, "config") ?: currentConfig
+        // Handle pulse action
+        if (intent?.action == ACTION_PULSE) {
+            val count = intent.getIntExtra("count", 3)
+            val duration = intent.getIntExtra("duration", 500)
+            val scale = intent.getFloatExtra("scale", 1.2f)
+            val alpha = intent.getFloatExtra("alpha", 0.7f)
+
+            widgetViewManager?.pulse(count, duration.toLong(), scale, alpha)
+            return START_STICKY
+        }
+
+        // Handle update appearance action
+        if (intent?.action == ACTION_UPDATE_APPEARANCE) {
+            @Suppress("UNCHECKED_CAST")
+            val appearance = intent.getSerializableExtra("appearance") as? HashMap<String, Any>
+            if (appearance != null) {
+                widgetViewManager?.updateAppearance(appearance)
+            }
+            return START_STICKY
+        }
+
+        // Handle update badge action
+        if (intent?.action == ACTION_UPDATE_BADGE) {
+            @Suppress("UNCHECKED_CAST")
+            val badge = intent.getSerializableExtra("badge") as? HashMap<String, Any>
+            if (badge != null) {
+                widgetViewManager?.updateBadge(badge)
+            }
+            return START_STICKY
+        }
+
+        // Get config from intent, or use existing, or load from SharedPreferences
+        val config = if (intent != null) {
+            // Normal start with config
+            intent.getParcelableExtra(applicationContext, "config") ?: currentConfig
+        } else {
+            // Service restarted by Android - load from SharedPreferences
+            currentConfig ?: Intent().getParcelableExtra(applicationContext, "config")
+        }
 
         if (config != null) {
             currentConfig = config
@@ -114,9 +167,39 @@ class FloatingWidgetService : Service() {
             AppStateReceiver.updateAppState(applicationContext, { isAppInForeground ->
                 handleAppStateChange(isAppInForeground)
             }, checkInterval)
+        } else {
+            // No config available - service can't run
+            // This shouldn't happen in normal flow, but handle gracefully
+            stopSelf()
+            return START_NOT_STICKY
         }
 
+        // Return START_STICKY so Android restarts the service if killed
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+
+        // When user swipes away the app from recent apps, Android calls this method.
+        // We need to restart the service to keep the widget alive.
+        val config = currentConfig
+        if (config != null) {
+            // Save current state
+            val prefs = getSharedPreferences("FloatingWidget", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("serviceEnabled", true).apply()
+
+            // Restart the service to keep it running
+            val restartIntent = Intent(applicationContext, FloatingWidgetService::class.java).apply {
+                putExtra(applicationContext, "config", config)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(restartIntent)
+            } else {
+                applicationContext.startService(restartIntent)
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -297,6 +380,21 @@ private fun Intent.putExtra(context: Context, name: String, config: WidgetConfig
     editor.putBoolean("draggable", config.draggable)
     config.initialX?.let { editor.putInt("initialX", it) }
     config.initialY?.let { editor.putInt("initialY", it) }
+
+    // Widget icon - convert Bitmap to Base64 for storage
+    if (config.icon != null) {
+        try {
+            val stream = java.io.ByteArrayOutputStream()
+            config.icon.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+            val iconBytes = stream.toByteArray()
+            val iconBase64 = android.util.Base64.encodeToString(iconBytes, android.util.Base64.DEFAULT)
+            editor.putString("widgetIconBase64", iconBase64)
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingWidget", "Failed to save icon to SharedPreferences", e)
+        }
+    } else {
+        editor.remove("widgetIconBase64")
+    }
 
     // Notification config
     editor.putString("notificationTitle", config.notification.title)
@@ -486,8 +584,22 @@ private fun Intent.getParcelableExtra(context: Context, name: String): WidgetCon
             checkInterval = prefs.getLong("appStateMonitoringCheckInterval", 1000)
         )
 
+        // Restore icon from Base64
+        val icon: android.graphics.Bitmap? = try {
+            val iconBase64 = prefs.getString("widgetIconBase64", null)
+            if (iconBase64 != null) {
+                val iconBytes = android.util.Base64.decode(iconBase64, android.util.Base64.DEFAULT)
+                android.graphics.BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("FloatingWidget", "Failed to restore icon from SharedPreferences", e)
+            null
+        }
+
         WidgetConfig(
-            icon = null, // Icon is stored separately
+            icon = icon,
             size = prefs.getInt("size", 56),
             shape = WidgetConfig.WidgetShape.valueOf(
                 prefs.getString("shape", "CIRCLE") ?: "CIRCLE"
